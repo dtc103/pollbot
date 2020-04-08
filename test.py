@@ -27,4 +27,4 @@ async def test(ctx):
         print("No")
 
 
-bot.run("NjI4OTczNTk3MjcyMTc4Njk4.Xosf-Q.KzpKKxwK-e_tVdKb4QOjoLOS5uw")
+bot.run("")
