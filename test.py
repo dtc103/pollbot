@@ -1,6 +1,14 @@
 import discord
 from discord.ext import commands
 
+import dotenv
+from dotenv import load_dotenv
+
+import os
+
+load_dotenv()
+TOKEN = os.getenv("TOKEN")
+
 bot = commands.Bot("!")
 
 
@@ -21,10 +29,18 @@ async def wait_for_query(ctx, message, delete_after=None):
 
 @bot.command(name="test")
 async def test(ctx):
-    if await wait_for_query(ctx, "Willst du?"):
-        print("yes")
-    else:
-        print("No")
+    embed = discord.Embed(title="title")
+    embed.add_field(name="name1", value="val1")
+    embed.add_field(name="name2", value="val2")
+    msg = await ctx.send(embed=embed)
+
+    msg = await ctx.fetch_message(msg.id)
+    embed = msg.embeds[0]
+    print(embed.fields[0].name)
+    embed.fields[0].name = "carlos"
+    print(embed.fields[0].name)
+
+    # await ctx.send(embed=embed)
 
 
-bot.run("")
+bot.run(TOKEN)

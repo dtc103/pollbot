@@ -185,7 +185,8 @@ async def create_automatic(ctx, *args):
         if index == 0:
             headline = item
         else:
-            items[Poll.emojilist[index - 1]] = item
+            if item.strip() != "":
+                items[Poll.emojilist[index - 1]] = item
 
     description = ""
     if await wait_for_query(ctx, "Soll noch eine Beschreibung hinzugefügt werden?"):
@@ -217,6 +218,18 @@ async def create_automatic(ctx, *args):
         await ctx.send("FEHLER! Umfrageliste leer. Umfrage wurde nicht erstellt")
 
 
+@bot.event
+async def on_reaction_add(reaction, user):
+    print(reaction.emoji)
+    print("add")
+
+
+@bot.event
+async def on_reaction_remove(reaction, user):
+    print(reaction.emoji)
+    print("remove")
+
+
 @bot.command(name="help")
 async def help(ctx):
     pass
@@ -231,7 +244,35 @@ async def edit(ctx):
 @edit.command(name="option")
 async def edit_change(ctx):
     poll = await choose_poll(ctx)
-    # TODO ferig machen
+    await ctx.send("**Welche Umfrageoption soll geändert werden?**")
+    poll_optionlist = (await ctx.fetch_message(poll.id)).embeds[0].fields
+
+    response = "```"
+    for index, embed_item in enumerate(poll_optionlist):
+        response += f"{index + 1} : \"{str(embed_item.value)}\"\n"
+    response += "```"
+    await ctx.send(response)
+    index = int((await wait_for_message(ctx)).content) - 1
+
+    change_correct = True
+    new_option_text = None
+    while change_correct:
+        msg = await wait_for_message(ctx, "**Zu ändernden Text eingeben:**")
+        if await wait_for_query(ctx, f"Ist **{msg.content}** richtig?"):
+            change_correct = False
+            new_option_text = msg.content
+        else:
+            if await wait_for_query(ctx, "Nochmal versuchen?"):
+                change_correct = True
+            else:
+                change_correct = False
+
+    value = poll_optionlist[index].value
+    for item in poll.item_list:
+        if value.startswith(item):
+            poll.item_list[item] = new_option_text
+
+    await (await ctx.fetch_message(poll.id)).edit(embed=poll.get_as_embed())
 
 
 @edit.command(name="title")
