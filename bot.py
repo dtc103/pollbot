@@ -29,9 +29,39 @@ class Poll:
         self.headline = headline
         self.description = description
         self.id = message_id
+        self.emoji_count = {}
+        for key in self.item_list:
+            self.emoji_count[key] = 1
+        self.highest_count = 1
+        self.highest_emoji = None
 
     def __str__(self):
-        pass
+        return "__str__(): not implemented"
+
+    def add_reaction(self, reaction):
+        for emoji in self.item_list:
+            if emoji == reaction.emoji:
+                self.emoji_count[emoji] += 1
+                if self.emoji_count[emoji] > self.highest_count:
+                    self.highest_count = self.emoji_count[emoji]
+                    self.highest_emoji = emoji
+
+    def remove_reaction(self, reaction):
+        for emoji in self.item_list:
+            if emoji == reaction.emoji:
+                self.emoji_count[emoji] -= 1
+                # if the current emoji was the most voted, find out the new most voted one
+                if self.highest_emoji == emoji:
+                    self.highest_count -= 1
+                    highest_emoji = None
+                    highest_count = 1
+                    for new_emoji in self.item_list:
+                        if self.emoji_count[new_emoji] > highest_count:
+                            highest_count = self.emoji_count[new_emoji]
+                            highest_count = new_emoji
+                    if highest_emoji is not None:
+                        self.highest_emoji = highest_emoji
+                    self.highest_count = highest_count
 
     def get_as_embed(self):
         embed = discord.Embed(title=self.headline,
@@ -41,6 +71,9 @@ class Poll:
         for key in self.item_list:
             embed.add_field(
                 name='\u200b', value=f"{key}: {self.item_list[key]}", inline=False)
+        if self.highest_emoji is not None:
+            embed.add_field(
+                name='\u200b', value=f"**Meiste Stimmen**: {self.item_list[self.highest_emoji]}")
         return embed
 
 
@@ -89,6 +122,26 @@ async def choose_poll(ctx):
 
 
 ##########################################################################################
+
+@bot.event
+async def on_reaction_add(reaction, user):
+    if user == bot.user:
+        return
+    for poll in glob_poll_list:
+        if reaction.message.id == poll.id and poll.is_ready:
+            poll.add_reaction(reaction)
+            await (await reaction.message.channel.fetch_message(poll.id)).edit(embed=poll.get_as_embed())
+
+
+@bot.event
+async def on_reaction_remove(reaction, user):
+    if user == bot.user:
+        return
+    for poll in glob_poll_list:
+        if reaction.message.id == poll.id and poll.is_ready:
+            poll.remove_reaction(reaction)
+            await (await reaction.message.channel.fetch_message(poll.id)).edit(embed=poll.get_as_embed())
+
 
 @bot.group(name="create")
 async def create(ctx):
@@ -169,6 +222,7 @@ async def create_custom(ctx):
         for emoji in poll.item_list:
             await msg.add_reaction(emoji)
         glob_poll_list.append(poll)
+        poll.is_ready = True
     else:
         await ctx.send("FEHLER! Umfrageliste leer. Umfrage wurde nicht erstellt")
 
@@ -214,20 +268,9 @@ async def create_automatic(ctx, *args):
         for emoji in poll.item_list:
             await msg.add_reaction(emoji)
         glob_poll_list.append(poll)
+        poll.is_ready = True
     else:
         await ctx.send("FEHLER! Umfrageliste leer. Umfrage wurde nicht erstellt")
-
-
-@bot.event
-async def on_reaction_add(reaction, user):
-    print(reaction.emoji)
-    print("add")
-
-
-@bot.event
-async def on_reaction_remove(reaction, user):
-    print(reaction.emoji)
-    print("remove")
 
 
 @bot.command(name="help")
@@ -245,32 +288,16 @@ async def edit(ctx):
 async def edit_change(ctx):
     poll = await choose_poll(ctx)
     await ctx.send("**Welche Umfrageoption soll geändert werden?**")
-    poll_optionlist = (await ctx.fetch_message(poll.id)).embeds[0].fields
 
     response = "```"
-    for index, embed_item in enumerate(poll_optionlist):
-        response += f"{index + 1} : \"{str(embed_item.value)}\"\n"
+    for index, emoji in enumerate(poll.item_list):
+        response += f"{index + 1} : {poll.item_list[emoji]}"
     response += "```"
     await ctx.send(response)
     index = int((await wait_for_message(ctx)).content) - 1
 
-    change_correct = True
-    new_option_text = None
-    while change_correct:
-        msg = await wait_for_message(ctx, "**Zu ändernden Text eingeben:**")
-        if await wait_for_query(ctx, f"Ist **{msg.content}** richtig?"):
-            change_correct = False
-            new_option_text = msg.content
-        else:
-            if await wait_for_query(ctx, "Nochmal versuchen?"):
-                change_correct = True
-            else:
-                change_correct = False
-
-    value = poll_optionlist[index].value
-    for item in poll.item_list:
-        if value.startswith(item):
-            poll.item_list[item] = new_option_text
+    msg = await wait_for_message(ctx, "**Zu ändernden Text eingeben:**")
+    poll.item_list[list(poll.item_list)[index]] = msg.content
 
     await (await ctx.fetch_message(poll.id)).edit(embed=poll.get_as_embed())
 

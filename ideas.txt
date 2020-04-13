@@ -1,1 +1,4 @@
 zeit für polls hinzufügen
+
+bei erstellen der poll_klasse, müssen die abfragen gelöscht werden
+    
