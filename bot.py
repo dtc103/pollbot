@@ -29,9 +29,15 @@ class Poll:
         self.headline = headline
         self.description = description
         self.id = message_id
+        self.max_count = 0
+        self.max_emoji = None
 
     def __str__(self):
         pass
+
+    def update_highest(self, emoji, count):
+        self.max_emoji = emoji
+        self.max_count = count
 
     def get_as_embed(self):
         embed = discord.Embed(title=self.headline,
@@ -41,6 +47,9 @@ class Poll:
         for key in self.item_list:
             embed.add_field(
                 name='\u200b', value=f"{key}: {self.item_list[key]}", inline=False)
+
+        if self.max_count > 1 and self.max_emoji is not None:
+            embed.add_field(name='\u200b', value=f"Am häufigsten abgestimmt: {self.item_list[self.max_emoji]} mit {self.max_count}")
         return embed
 
 
@@ -89,6 +98,27 @@ async def choose_poll(ctx):
 
 
 ##########################################################################################
+
+
+@bot.event
+async def on_reaction_add(reaction, user):
+    for poll in glob_poll_list:
+        if poll.id == reaction.message.id:
+            message_reactions = reaction.message.reactions
+            highest_count = 0
+
+            for curr_reaction in message_reactions:
+                if curr_reaction.count <= 1:
+                    break
+                else:
+                    for valid_reaction in poll.item_list:
+                        if curr_reaction.emoji == valid_reaction and curr_reaction.count > highest_count:
+                            highest_count = curr_reaction.count
+                            print(f"{curr_reaction.emoji} is highest, with {curr_reaction.count}")
+            
+            
+
+
 
 @bot.group(name="create")
 async def create(ctx):

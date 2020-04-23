@@ -1,30 +1,25 @@
 import discord
 from discord.ext import commands
 
-bot = commands.Bot("!")
+import dotenv
+from dotenv import load_dotenv
 
+import os
 
-async def wait_for_query(ctx, message, delete_after=None):
-    accept_emoji = "✅"
-    decline_emoji = "❌"
+bot = commands.Bot(command_prefix="!")
 
-    msg = await ctx.send(message)
-    await msg.add_reaction(accept_emoji)
-    await msg.add_reaction(decline_emoji)
-    reaction, _ = await bot.wait_for(event='reaction_add', check=lambda reaction, user: ctx.author == user and reaction.message.id == msg.id)
+load_dotenv()
 
-    if reaction.emoji == accept_emoji:
-        return True
-    else:
-        return False
+TOKEN = os.getenv("TOKEN")
 
+@bot.event
+async def on_ready():
+    game = discord.Game("!help")
+    await bot.change_presence(status=discord.Status.online, activity=game)
+    print("Ready")
 
 @bot.command(name="test")
 async def test(ctx):
-    if await wait_for_query(ctx, "Willst du?"):
-        print("yes")
-    else:
-        print("No")
+    pass
 
-
-bot.run("")
+bot.run(TOKEN)
