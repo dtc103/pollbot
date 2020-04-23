@@ -19,14 +19,11 @@ bot.remove_command("help")
 
 glob_poll_list = []
 
+class PollBotCog(commands.Cog):
+    pass
+
 
 class Poll:
-    emojilist = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣",
-                 "7️⃣", "8️⃣", "9️⃣", "🔟", "🅰", "🅱", "🆒",
-                 "🆓", "🅾", "❓", "❗", "🔆", "🔀", "🩺", "💊",
-                 "🧬", "🔬", "📡", "🧪", "🧫", "🧰", "🧲", "🏹"]
-
-    #lifetime in minutes
     def __init__(self, channel_info: discord.TextChannel, item_list: {}, headline: str, description: str, message_id, lifetime: int = 2):
         self.item_list = item_list
         self.headline = headline
@@ -306,6 +303,12 @@ async def create_custom(ctx):
 
 @create.command(name="automatic")
 async def create_automatic(ctx, *args):
+
+    emojilist = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣",
+                 "7️⃣", "8️⃣", "9️⃣", "🔟", "🅰", "🅱", "🆒",
+                 "🆓", "🅾", "❓", "❗", "🔆", "🔀", "🩺", "💊",
+                 "🧬", "🔬", "📡", "🧪", "🧫", "🧰", "🧲", "🏹"]
+
     in_args = ""
     for string in args:
         in_args += f"{string} "
