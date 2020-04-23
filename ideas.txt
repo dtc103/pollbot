@@ -1,4 +1,7 @@
-zeit für polls hinzufügen
+poll berechtigungen nur für bestimmte rollen
+
 
 bei erstellen der poll_klasse, müssen die abfragen gelöscht werden
-    
+
+
+BOT für streamankündigungen schreiben

@@ -12,35 +12,34 @@ TOKEN = os.getenv("TOKEN")
 bot = commands.Bot("!")
 
 
-async def wait_for_query(ctx, message, delete_after=None):
-    accept_emoji = "✅"
-    decline_emoji = "❌"
-
-    msg = await ctx.send(message)
-    await msg.add_reaction(accept_emoji)
-    await msg.add_reaction(decline_emoji)
-    reaction, _ = await bot.wait_for(event='reaction_add', check=lambda reaction, user: ctx.author == user and reaction.message.id == msg.id)
-
-    if reaction.emoji == accept_emoji:
-        return True
+async def wait_for_message(ctx, message=None, delete_after=None):
+    if message is None:
+        return await bot.wait_for(event='message', check=lambda message: ctx.author == message.author)
     else:
-        return False
+        await ctx.send(message, delete_after=delete_after)
+        return await bot.wait_for(event='message', check=lambda message: ctx.author == message.author)
+
+
+async def choose_channel(ctx):
+    await ctx.send("**In welchen Channel soll die Umfrage gestellt werden?**")
+    guild = discord.utils.find(lambda g: ctx.guild == g, bot.guilds)
+    response = "```"
+    for index, channel in enumerate(guild.text_channels):
+        response += f"{index + 1}: {channel.name}\n"
+    response += "```"
+
+    await ctx.send(response)
+
+    msg = await wait_for_message(ctx)
+    index = int(msg.content)
+
+    return guild.text_channels[index - 1]
 
 
 @bot.command(name="test")
 async def test(ctx):
-    embed = discord.Embed(title="title")
-    embed.add_field(name="name1", value="val1")
-    embed.add_field(name="name2", value="val2")
-    msg = await ctx.send(embed=embed)
-
-    msg = await ctx.fetch_message(msg.id)
-    embed = msg.embeds[0]
-    print(embed.fields[0].name)
-    embed.fields[0].name = "carlos"
-    print(embed.fields[0].name)
-
-    # await ctx.send(embed=embed)
+    channel = await choose_channel(ctx)
+    print(channel.name)
 
 
 bot.run(TOKEN)
