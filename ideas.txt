@@ -1,7 +1,6 @@
 poll berechtigungen nur für bestimmte rollen
-
-
 bei erstellen der poll_klasse, müssen die abfragen gelöscht werden
+wenn der bot auf mehreren servern ist, müssen die berechtigungen für jeden server individuell sein
 
 
 BOT für streamankündigungen schreiben
