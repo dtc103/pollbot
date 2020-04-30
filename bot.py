@@ -1,18 +1,12 @@
 import os
+import asyncio
 import discord
 from discord.ext import commands, tasks
-
-from discordPoll import DiscordPoll
-from pollBotCog import PollBotCog
-
-from utilities import *
 
 import dotenv
 from dotenv import load_dotenv
 
-import asyncio
-
-import datetime
+from pollBotCog import PollBotCog
 
 load_dotenv()
 
