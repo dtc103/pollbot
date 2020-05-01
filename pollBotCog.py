@@ -4,6 +4,33 @@ from discordPoll import DiscordPoll
 from utilities import *
 
 
+def bot_command_channel(guild_channel_uses):
+    async def wrapper_for_check(ctx, *args):
+        command_channels = guild_channel_uses[ctx.guild]
+        if len(command_channels) == 0 and command_channels is not None:
+            return True
+
+        for channel in command_channels:
+            if ctx.message.channel == channel:
+                return True
+
+        await ctx.send(f"{ctx.message.author.mention}, this botcommand belongs into {discord.utils.find(lambda c: channel == c.name, ctx.message.guild.channels).mention}", delete_after=20)
+        await ctx.message.delete(delay=20)
+
+        return False
+
+    return commands.check(wrapper_for_check)
+
+
+def has_server_role(guild_role_uses):
+    async def get_roles(ctx, *args):
+        for guild in guild_role_uses:
+            if ctx.guild == guild:
+                return guild_role_uses[guild]
+
+    return commands.check(commands.has_any_role(get_roles))
+
+
 class PollBotCog(commands.Cog):
     # key is the guild, value is a list
     guild_role_uses = {}
@@ -13,8 +40,8 @@ class PollBotCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    # @has_server_role()
-    # @bot_command_channel()
+    @has_server_role(guild_role_uses)
+    @bot_command_channel(guild_channel_uses)
     @commands.group(name="create")
     async def create(self, ctx):
         if ctx.invoked_subcommand is None:
@@ -167,7 +194,7 @@ class PollBotCog(commands.Cog):
         pass
 
     # @has_server_role()
-   # @bot_command_channel()
+    # @bot_command_channel()
     @commands.group(name="edit")
     async def edit(self, ctx):
         if ctx.invoked_subcommand is None:
@@ -221,35 +248,54 @@ class PollBotCog(commands.Cog):
 
         await message.edit(embed=poll.get_as_embed())
 
+    @commands.command(name="adduser")
+    async def add_user(self, ctx):
+        role = await self.choose_role(self.bot, ctx, "Rollen auswählen, die den Bot bedienen dürfen")
+        self.guild_role_uses[ctx.guild].append(role)
+
+    @commands.command(name="addchannel")
+    async def add_channel(self, ctx):
+        channel = await self.choose_channel(
+            self.bot, ctx, "Channel auswählen, in dem die Befehle ausgeführt werden dürfen")
+        self.guild_role_uses[ctx.guild].append(channel)
+
     ######################### LISTENER #######################################
     @commands.Cog.listener()
     async def on_guild_join(self, guild):
-        self.guild_channel_uses[guild] = []
-        self.guild_polls[guild] = []
-        self.guild_role_uses = []
+        if guild not in self.guild_channel_uses:
+            self.guild_channel_uses[guild] = []
+            self.guild_polls[guild] = []
+            self.guild_role_uses[guild] = []
+        print(f"Joines Guild {guild.name}")
 
     @commands.Cog.listener()
     async def on_ready(self):
         await self.bot.change_presence(activity=discord.Game(name="s?help for usage"),
                                        status=discord.Status.online)
+        for guild in self.bot.guilds:
+            if guild not in self.guild_channel_uses:
+                self.guild_channel_uses[guild] = []
+                self.guild_polls[guild] = []
+                self.guild_role_uses[guild] = []
+        print(f"Joines Guild {guild.name}")
 
     @commands.Cog.listener()
     async def on_reaction_add(self, reaction, user):
         if user == self.bot.user:
             return
-        # for poll in self.guild_polls[reaction.message.guild]:
-        #     if reaction.message.id == poll.id:
-        #         poll.add_reaction(reaction)
-        #         await (await reaction.message.channel.fetch_message(poll.id)).edit(embed=poll.get_as_embed())
+        for poll in self.guild_polls[reaction.message.guild]:
+            if reaction.message == poll.message:
+                poll.add_item(reaction)
+                await poll.message.edit(embed=self.get_as_embed(poll))
 
     @commands.Cog.listener()
     async def on_reaction_remove(self, reaction, user):
         if user == self.bot.user:
             return
-        # for poll in self.guild_polls[reaction.message.guild]:
-        #     if reaction.message.id == poll.id:
-        #         poll.remove_reaction(reaction)
-        #         await (await reaction.message.channel.fetch_message(poll.id)).edit(embed=poll.get_as_embed())
+        for poll in self.guild_polls[reaction.message.guild]:
+            if reaction.message == poll.message:
+                poll.remove_item(reaction)
+                await poll.message.edit(embed=self.get_as_embed(poll))
 
     async def choose_poll(self, ctx):
         await ctx.send("**Nummer der Umfrage eingeben, die verändert werden soll:**", delete_after=20)
@@ -278,6 +324,22 @@ class PollBotCog(commands.Cog):
         index = int(msg.content)
 
         return guild.text_channels[index - 1]
+
+    async def choose_role(self, bot, ctx, msg=None):
+        await ctx.send(msg)
+        guild: discord.Guild = discord.utils.find(
+            lambda g: ctx.guild == g, bot.guilds)
+        response = "```"
+        for index, role in enumerate(guild.roles):
+            response += f"{index + 1}: {role.name}\n"
+        response += "```"
+
+        await ctx.send(response)
+
+        msg = await wait_for_message(self.bot, ctx)
+        index = int(msg.content)
+
+        return guild.roles[index - 1]
 
     def get_poll_as_embed(self, poll: DiscordPoll):
         embed = discord.Embed(title=self.headline,
@@ -316,32 +378,3 @@ class PollBotCog(commands.Cog):
             text=f"Time left: {days_left_string}:{hours_left_string}:{minutes_left_string}")
 
         return embed
-
-    # def bot_command_channel(self):
-    #     async def wrapper_for_check(ctx, *args):
-    #         command_channels = guild_channel_uses[ctx.guild]
-    #         if len(command_channels) == 0 and command_channels is not None:
-    #             return True
-
-    #         for channel in command_channels:
-    #             if ctx.message.channel == channel:
-    #                 return True
-
-    #         await ctx.send(f"{ctx.message.author.mention}, this botcommand belongs into {discord.utils.find(lambda c: channel == c.name, ctx.message.guild.channels).mention}", delete_after=20)
-    #         await ctx.message.delete(delay=20)
-
-    #         return False
-
-    #     return commands.check(wrapper_for_check)
-
-    # def has_server_role(self):
-
-    #     async def get_roles(ctx, *args):
-    #         for guild in self.bot.guilds:
-    #             if ctx.guild == guild:
-    #                 return self.guild_role_uses[guild]
-
-    #     return commands.check(commands.has_any_role(get_roles))
-
-    # def get_guild_from_context(self, ctx):
-    #     return ctx.guild
