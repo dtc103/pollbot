@@ -1,6 +1,6 @@
 import discord
 from discord.ext import tasks, commands
-from discordPoll import DiscordPoll
+from discordPoll import DiscordPoll, get_poll_as_embed
 from utilities import *
 
 
@@ -22,13 +22,24 @@ def bot_command_channel(guild_channel_uses):
     return commands.check(wrapper_for_check)
 
 
-def has_server_role(guild_role_uses):
-    async def get_roles(ctx, *args):
-        for guild in guild_role_uses:
-            if ctx.guild == guild:
-                return guild_role_uses[guild]
+def has_server_role(guild_command_roles):
+    async def has_any_role(ctx, *args):
+        for guild in guild_command_roles:
+            if guild == ctx.guild:
+                accepted_roles = guild_command_roles[guild]
+                if len(accepted_roles) < 1:
+                    return True
+                for role in accepted_roles:
+                    for member_role in ctx.message.author.roles:
+                        if role == member_role:
+                            return True
+                return False
 
-    return commands.check(commands.has_any_role(get_roles))
+    return commands.check(has_any_role)
+
+
+def get_guild_from_context(ctx):
+    return ctx.guild
 
 
 class PollBotCog(commands.Cog):
@@ -45,15 +56,17 @@ class PollBotCog(commands.Cog):
     @commands.group(name="create")
     async def create(self, ctx):
         if ctx.invoked_subcommand is None:
+            # normally print help here
             print("failure")
+        else:
+            if ctx.guild not in self.guild_polls:
+                self.guild_polls[ctx.guild] = []
 
     @create.command(name="custom")
     async def create_custom(self, ctx):
-        await ctx.send("**Titel für Umfrage festlegen:**")
-
         try_again_headline = True
         while(try_again_headline):
-            msg = await wait_for_message(self.bot, ctx, None)
+            msg = await wait_for_message(self.bot, ctx, "**Titel für Umfrage festlegen:**")
             headline = msg.content
 
             if await wait_for_query(self.bot, ctx, f"Ist **{headline}** richtig?"):
@@ -62,24 +75,23 @@ class PollBotCog(commands.Cog):
             else:
                 if await wait_for_query(self.bot, ctx, "Nochmal versuchen?"):
                     try_again_headline = True
-                    await ctx.send("Titel eingeben:")
                     continue
                 else:
                     try_again_headline = False
+                    await ctx.send("Titel wird benötgt. Umfrage wurde nicht erstellt")
                     return
 
-        itemlist = {}
-
+        items = {}
         add_item = True
         while(add_item):
             msg = await wait_for_message(self.bot,
-                                         ctx, "**Umfrageoption hinzufügen und mit entsprechendem emoji reagieren:**", None)
+                                         ctx, "**Umfrageoption hinzufügen und mit entsprechendem emoji auf die Option reagieren:**")
             item_desc = msg.content
             reaction = await wait_for_reaction(self.bot, ctx, msg)
             item_emoji = reaction.emoji
 
             if await wait_for_query(self.bot, ctx, f"Ist {item_emoji} **{item_desc}** richtig?", None):
-                itemlist[item_emoji] = item_desc
+                items[item_emoji] = item_desc
 
                 if await wait_for_query(self.bot, ctx, "Weitere Option hinzufügen?", None):
                     add_item = True
@@ -92,6 +104,10 @@ class PollBotCog(commands.Cog):
                     add_item = True
                     continue
                 else:
+                    if len(items) < 1:
+                        await ctx.send("Umfrageliste leer. Umfrage wurde nicht erstellt")
+                        add_item = False
+                        return
                     add_item = False
                     break
 
@@ -113,23 +129,35 @@ class PollBotCog(commands.Cog):
                         descritption_ready = False
                         break
 
-        msg = await wait_for_message(self.bot, ctx, "**Stunden eingeben, die die Umfrage laufen soll**")
-        max_lifetime = int(msg.content)
+        time = []
+        lifetime = None
+        while len(time) != 3:
+            msg = await wait_for_message(self.bot, ctx, "**Umfragezeit im Format DD:HH:MM eingeben:**")
+            time = msg.content.strip().split(":")
 
-        channel_to_write = await self.choose_channel(self.bot, ctx, "Choose Channel")
+            if len(time) == 3:
+                lifetime = int(time[2]) + int(time[1]) * \
+                    60 + int(time[0]) * 60 * 24
+                break
 
-        if len(itemlist) > 0:
-            poll = DiscordPoll(itemlist, headline, None,
-                               None, ctx.guild, description=description if description != "" else None, lifetime=max_lifetime * 60)
-            msg = await channel_to_write.send(embed=poll.get_as_embed())
-            poll.id = msg.id
-            poll.channel = msg.channel
-            for emoji in poll.item_list:
-                await msg.add_reaction(emoji)
-            self.guild_polls[ctx.guild].append(poll)
-            poll.start()
-        else:
-            await ctx.send("FEHLER! Umfrageliste leer. Umfrage wurde nicht erstellt")
+            await ctx.send("Zeitformat falsch eingegeben")
+
+            if await wait_for_query(self.bot, ctx, "Umfragezeit nochmal eingeben?"):
+                continue
+            else:
+                await ctx.send("Es wurde keine Zeit eingegeben")
+                break
+
+        channel_to_write = await choose_channel(self.bot, ctx, ctx.guild)
+
+        # create poll and send to channel
+        poll = DiscordPoll(items, headline, ctx.guild, channel_to_write,
+                           description=description if description is not None else None, lifetime=lifetime if lifetime is not None else None)
+        msg = await channel_to_write.send(embed=get_poll_as_embed(poll))
+        for emoji in poll.item_list:
+            await msg.add_reaction(emoji)
+        self.guild_polls[ctx.guild].append(poll)
+        poll.start(msg)
 
     @create.command(name="automatic")
     async def create_automatic(self, ctx, *args):
@@ -150,41 +178,55 @@ class PollBotCog(commands.Cog):
                 headline = item
             else:
                 if item.strip() != "":
-                    items[Poll.emojilist[index - 1]] = item
+                    items[emojilist[index - 1]] = item
 
         description = ""
-        if await wait_for_query(ctx, "Soll noch eine Beschreibung hinzugefügt werden?"):
+        if await wait_for_query(self.bot, ctx, "Soll noch eine Beschreibung hinzugefügt werden?"):
             descritption_ready = True
             while descritption_ready:
-                msg = await wait_for_message(ctx, "**Beschreibung:**")
+                msg = await wait_for_message(self.bot, ctx, "**Beschreibung:**")
                 description = msg.content
 
-                if await wait_for_query(ctx, f"Ist **{description}** richtig?"):
+                if await wait_for_query(self.bot, ctx, f"Ist **{description}** richtig?"):
                     descritption_ready = False
                     break
                 else:
-                    if await wait_for_query(ctx, "Nochmal versuchen?"):
+                    if await wait_for_query(self.bot, ctx, "Nochmal versuchen?"):
                         descritption_ready = True
                         continue
                     else:
                         descritption_ready = False
                         break
 
-        msg = await wait_for_message(ctx, "**Stunden eingeben, die die Umfrage laufen soll**")
-        max_lifetime = int(msg.content)
+        time = []
+        lifetime = None
+        while len(time) != 3:
+            msg = await wait_for_message(self.bot, ctx, "**Umfragezeit im Format DD:HH:MM eingeben:**")
+            time = msg.content.strip().split(":")
 
-        channel_to_write = await choose_channel(ctx)
+            if len(time) == 3:
+                lifetime = int(time[2]) + int(time[1]) * \
+                    60 + int(time[0]) * 60 * 24
+                break
+
+            await ctx.send("Zeitformat falsch eingegeben")
+
+            if await wait_for_query(self.bot, ctx, "Umfragezeit nochmal eingeben?"):
+                continue
+            else:
+                await ctx.send("Es wurde keine Zeit eingegeben")
+                break
+
+        channel_to_write = await choose_channel(self.bot, ctx, ctx.guild)
 
         if len(items) > 0:
-            poll = DiscordPoll(items, headline, None, None,
-                               description=description if description != "" else None, lifetime=max_lifetime*60)
-            msg = await channel_to_write.send(embed=poll.get_as_embed())
-            poll.id = msg.id
-            poll.channel = msg.channel
+            poll = DiscordPoll(items, headline, ctx.guild, channel_to_write,
+                               description=description if description is not None else None, lifetime=lifetime if lifetime is not None else None)
+            msg = await channel_to_write.send(embed=get_poll_as_embed(poll))
             for emoji in poll.item_list:
                 await msg.add_reaction(emoji)
             self.guild_polls[ctx.guild].append(poll)
-            poll.start
+            poll.start(msg)
         else:
             await ctx.send("FEHLER! Umfrageliste leer. Umfrage wurde nicht erstellt")
 
@@ -206,7 +248,7 @@ class PollBotCog(commands.Cog):
 
     @edit.command(name="option")
     async def edit_change(self, ctx):
-        poll = await choose_poll(ctx)
+        poll = await self.choose_poll(ctx)
         await ctx.send("**Welche Umfrageoption soll geändert werden?**")
 
         response = "```"
@@ -214,7 +256,7 @@ class PollBotCog(commands.Cog):
             response += f"{index + 1} : {poll.item_list[emoji]}"
         response += "```"
         await ctx.send(response)
-        index = int((await wait_for_message(ctx)).content) - 1
+        index = int((await wait_for_message(self.bot, ctx)).content) - 1
 
         msg = await wait_for_message(ctx, "**Zu ändernden Text eingeben:**")
         poll.item_list[list(poll.item_list)[index]] = msg.content
@@ -224,7 +266,7 @@ class PollBotCog(commands.Cog):
     @edit.command(name="title")
     async def edit_title(self, ctx):
         await ctx.message.delete(delay=20)
-        poll = await choose_poll(ctx)
+        poll = await self.choose_poll(ctx)
 
         msg = await wait_for_message(ctx, "**Neuen Titel eingeben**", 20)
         poll.headline = msg.content
@@ -232,13 +274,13 @@ class PollBotCog(commands.Cog):
 
         message = await ctx.fetch_message(poll.id)
 
-        await message.edit(embed=poll.get_as_embed())
+        await message.edit(embed=get_poll_as_embed(poll))
 
     @edit.command(name="description")
     async def edit_description(self, ctx):
         await ctx.message.delete(delay=20)
 
-        poll = await choose_poll(ctx)
+        poll = await self.choose_poll(ctx)
 
         msg = await wait_for_message(ctx, "**Neue Beschreibung eingeben**", 20)
         poll.description = msg.content
@@ -345,16 +387,16 @@ class PollBotCog(commands.Cog):
         embed = discord.Embed(title=self.headline,
                               colour=discord.Colour.blue())
 
-        if poll.description is not None:
-            embed.description = self.description
-        for key in poll.item_list:
-            embed.add_field(
-                name='\u200b', value=f"{key}: {self.item_list[key]}", inline=False)
-        if poll.highest_item is not None:
-            embed.add_field(
-                name='\u200b', value=f"**Most votes**: {self.item_list[self.highest_item]}")
 
-        embed.set_thumbnail(url=poll.guild.icon_url)
+def bot_command_channel(guild_command_channel):
+    async def wrapper_for_check(ctx, *args):
+        command_channels = guild_command_channel[ctx.guild]
+        if len(command_channels) == 0 and command_channels is not None:
+            return True
+
+        for channel in command_channels:
+            if ctx.message.channel == channel:
+                return True
 
         days_left = int((self.lifetime / 60) / 24)
         hours_left = int(self.lifetime / 60) - 24 * days_left
@@ -378,3 +420,13 @@ class PollBotCog(commands.Cog):
             text=f"Time left: {days_left_string}:{hours_left_string}:{minutes_left_string}")
 
         return embed
+        await ctx.send(f"{ctx.message.author.mention}, this botcommand belongs into {discord.utils.find(lambda c: channel == c.name, ctx.message.guild.channels).mention}", delete_after=20)
+        await ctx.message.delete(delay=20)
+
+        return False
+
+    return commands.check(wrapper_for_check)
+
+
+def get_guild_from_context(ctx):
+    return ctx.guild

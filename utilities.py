@@ -1,6 +1,8 @@
 import discord
 from discord.ext import commands, tasks
 
+from discordPoll import DiscordPoll
+
 
 async def wait_for_message(bot, ctx, message=None, delete_after=None):
     if message is None:
@@ -33,3 +35,31 @@ async def wait_for_query(bot, ctx, message, delete_after=None):
 async def wait_for_reaction(bot, ctx, message=None, delete_after=None):
     reaction, _ = await bot.wait_for(event='reaction_add', check=lambda reaction, user: ctx.author == user and reaction.message.id == message.id)
     return reaction
+
+async def choose_channel(bot, ctx, guild: discord.Guild, msg="Choose channel index"):
+    await ctx.send(msg)
+    response = "```"
+    for index, channel in enumerate(guild.text_channels):
+        response += f"{index + 1}: {channel.name}\n"
+    response += "```"
+
+    await ctx.send(response)
+
+    msg = await wait_for_message(bot, ctx)
+    index = int(msg.content)
+
+    return guild.text_channels[index - 1]
+    
+async def choose_role(bot, ctx, guild: discord.Guild, msg="Choose role index"):
+    await ctx.send(msg)
+    response = "```"
+    for index, role in enumerate(guild.roles):
+        response += f"{index + 1}: {role.name}\n"
+    response += "```"
+
+    await ctx.send(response)
+
+    msg = await wait_for_message(bot, ctx)
+    index = int(msg.content)
+
+    return guild.roles[index - 1]
