@@ -1,5 +1,5 @@
 class Poll:
-    
+
     def __init__(self, item_list: {}, headline: str):
         self.item_list = item_list
         self.headline = headline
@@ -10,7 +10,6 @@ class Poll:
 
         self.highest_count = 1
         self.highest_item = None
-
 
     def add_item(self, new_item):
         for item in self.item_list:
@@ -27,10 +26,10 @@ class Poll:
                 # if the current emoji was the most voted, find out the new most voted one
                 if self.highest_item == item:
                     highest_item, highest_count = self._get_highest()
-                    
+
                     self.highest_item = highest_item
                     self.highest_count = highest_count
-    
+
     def _get_highest(self):
         highest_count = 1
         highest_item = None
@@ -40,7 +39,7 @@ class Poll:
             if item_count > highest_count:
                 highest_count = item_count
                 highest_item = item
-        
+
         return (highest_item, highest_count)
 
     def __str__(self):

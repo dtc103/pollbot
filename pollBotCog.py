@@ -3,6 +3,8 @@ from discord.ext import tasks, commands
 from discordPoll import DiscordPoll, get_poll_as_embed
 from utilities import *
 
+from help_embeds import get_help_german
+
 
 def bot_command_channel(guild_channel_uses):
     async def wrapper_for_check(ctx, *args):
@@ -13,9 +15,6 @@ def bot_command_channel(guild_channel_uses):
         for channel in command_channels:
             if ctx.message.channel == channel:
                 return True
-
-        await ctx.send(f"{ctx.message.author.mention}, this botcommand belongs into {discord.utils.find(lambda c: channel == c.name, ctx.message.guild.channels).mention}", delete_after=20)
-        await ctx.message.delete(delay=20)
 
         return False
 
@@ -50,6 +49,7 @@ class PollBotCog(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
+        self.lifetime_management.start()
 
     @has_server_role(guild_role_uses)
     @bot_command_channel(guild_channel_uses)
@@ -233,10 +233,10 @@ class PollBotCog(commands.Cog):
     # TODO
     @commands.command(name="help")
     async def help(self, ctx):
-        pass
+        await ctx.send(embed=get_help_german())
 
-    # @has_server_role()
-    # @bot_command_channel()
+    @has_server_role(guild_role_uses)
+    @bot_command_channel(guild_channel_uses)
     @commands.group(name="edit")
     async def edit(self, ctx):
         if ctx.invoked_subcommand is None:
@@ -290,16 +290,20 @@ class PollBotCog(commands.Cog):
 
         await message.edit(embed=poll.get_as_embed())
 
-    @commands.command(name="adduser")
+    @commands.command(name="addrole")
     async def add_user(self, ctx):
         role = await self.choose_role(self.bot, ctx, "Rollen auswählen, die den Bot bedienen dürfen")
-        self.guild_role_uses[ctx.guild].append(role)
+        if role not in self.guild_role_uses[ctx.guild]:
+            self.guild_role_uses[ctx.guild].append(role)
+        print(self.guild_role_uses[ctx.guild])
 
     @commands.command(name="addchannel")
     async def add_channel(self, ctx):
         channel = await self.choose_channel(
             self.bot, ctx, "Channel auswählen, in dem die Befehle ausgeführt werden dürfen")
-        self.guild_role_uses[ctx.guild].append(channel)
+        if channel not in self.guild_channel_uses[ctx.guild]:
+            self.guild_channel_uses[ctx.guild].append(channel)
+        print(self.guild_channel_uses[ctx.guild])
 
     ######################### LISTENER #######################################
     @commands.Cog.listener()
@@ -325,19 +329,20 @@ class PollBotCog(commands.Cog):
     async def on_reaction_add(self, reaction, user):
         if user == self.bot.user:
             return
+        print(self.guild_polls[reaction.message.guild])
         for poll in self.guild_polls[reaction.message.guild]:
-            if reaction.message == poll.message:
-                poll.add_item(reaction)
-                await poll.message.edit(embed=self.get_as_embed(poll))
+            print(reaction.message.id == poll.message.id)
+            if reaction.message.id == poll.message.id and reaction.message.guild == poll.message.guild:
+                await poll.add_item(reaction.emoji)
 
     @commands.Cog.listener()
     async def on_reaction_remove(self, reaction, user):
         if user == self.bot.user:
             return
+        print(self.guild_polls[reaction.message.guild])
         for poll in self.guild_polls[reaction.message.guild]:
-            if reaction.message == poll.message:
-                poll.remove_item(reaction)
-                await poll.message.edit(embed=self.get_as_embed(poll))
+            if reaction.message.id == poll.message.id and reaction.message.guild == poll.message.guild:
+                await poll.remove_item(reaction.emoji)
 
     async def choose_poll(self, ctx):
         await ctx.send("**Nummer der Umfrage eingeben, die verändert werden soll:**", delete_after=20)
@@ -380,53 +385,17 @@ class PollBotCog(commands.Cog):
 
         msg = await wait_for_message(self.bot, ctx)
         index = int(msg.content)
-
+        print(f"Rolle: {guild.roles[index - 1]}")
         return guild.roles[index - 1]
 
-    def get_poll_as_embed(self, poll: DiscordPoll):
-        embed = discord.Embed(title=self.headline,
-                              colour=discord.Colour.blue())
-
-
-def bot_command_channel(guild_command_channel):
-    async def wrapper_for_check(ctx, *args):
-        command_channels = guild_command_channel[ctx.guild]
-        if len(command_channels) == 0 and command_channels is not None:
-            return True
-
-        for channel in command_channels:
-            if ctx.message.channel == channel:
-                return True
-
-        days_left = int((self.lifetime / 60) / 24)
-        hours_left = int(self.lifetime / 60) - 24 * days_left
-        minutes_left = int(self.lifetime - days_left *
-                           24 * 60 - hours_left * 60)
-
-        if days_left < 10:
-            days_left_string = f"0{days_left}"
-        else:
-            days_left_string = f"{days_left}"
-        if hours_left < 10:
-            hours_left_string = f"0{hours_left}"
-        else:
-            hours_left_string = f"{hours_left}"
-        if minutes_left < 10:
-            minutes_left_string = f"0{minutes_left}"
-        else:
-            minutes_left_string = f"{minutes_left}"
-
-        embed.set_footer(
-            text=f"Time left: {days_left_string}:{hours_left_string}:{minutes_left_string}")
-
-        return embed
-        await ctx.send(f"{ctx.message.author.mention}, this botcommand belongs into {discord.utils.find(lambda c: channel == c.name, ctx.message.guild.channels).mention}", delete_after=20)
-        await ctx.message.delete(delay=20)
-
-        return False
-
-    return commands.check(wrapper_for_check)
-
-
-def get_guild_from_context(ctx):
-    return ctx.guild
+    @tasks.loop(minutes=1.0)
+    async def lifetime_management(self):
+        for guild in self.guild_polls:
+            for poll in self.guild_polls[guild]:
+                if poll.lifetime <= 0:
+                    poll.active = False
+                    await poll.message.edit(embed=get_poll_as_embed(poll))
+                    poll.end()
+                else:
+                    await poll.message.edit(embed=get_poll_as_embed(poll))
+                    poll.lifetime -= 1
